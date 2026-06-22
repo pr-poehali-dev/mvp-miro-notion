@@ -10,6 +10,10 @@ export interface Achievement {
   description: string;
   image: string;
   color: string;
+  done?: boolean;
+  cropX?: number;
+  cropY?: number;
+  cropScale?: number;
 }
 
 export interface Task {

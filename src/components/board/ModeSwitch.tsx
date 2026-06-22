@@ -1,4 +1,3 @@
-import Icon from '@/components/ui/icon';
 import { Mode } from '@/types/board';
 
 interface Props {
@@ -7,28 +6,28 @@ interface Props {
 }
 
 const ModeSwitch = ({ mode, onChange }: Props) => {
-  const Tab = ({ value, icon, label }: { value: Mode; icon: string; label: string }) => {
+  const Tab = ({ value, label }: { value: Mode; label: string }) => {
     const active = mode === value;
     return (
       <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={() => onChange(value)}
-        className="flex h-10 items-center gap-2 rounded-2xl px-5 font-display text-sm font-semibold transition-all"
+        className="px-5 py-1 font-sans text-sm font-medium transition-colors"
         style={{
-          background: active ? '#5D82FF' : 'transparent',
-          color: active ? '#0c1024' : 'rgba(255,255,255,0.7)',
+          color: active ? '#fff' : 'rgba(255,255,255,0.45)',
+          borderBottom: active ? '2px solid #5D82FF' : '2px solid transparent',
+          marginBottom: -1,
         }}
       >
-        <Icon name={icon} size={16} />
         {label}
       </button>
     );
   };
 
   return (
-    <div className="panel fixed left-1/2 top-6 z-20 flex -translate-x-1/2 items-center gap-1 rounded-[24px] p-1.5">
-      <Tab value="tree" icon="GitFork" label="Дерево навыков" />
-      <Tab value="tasks" icon="ListChecks" label="Задания" />
+    <div className="flex items-center gap-1">
+      <Tab value="tree" label="Дерево Навыков" />
+      <Tab value="tasks" label="Задание" />
     </div>
   );
 };

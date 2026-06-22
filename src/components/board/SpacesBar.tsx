@@ -9,8 +9,11 @@ interface Props {
 }
 
 const SpacesBar = ({ spaces, activeId, onSelect, onAdd }: Props) => (
-  <div className="panel fixed left-6 top-1/2 z-20 flex max-h-[440px] -translate-y-1/2 flex-col items-center gap-3 rounded-[28px] p-3">
-    <div className="hide-scroll flex max-h-[372px] flex-col items-center gap-3 overflow-y-auto">
+  <div
+    className="fixed left-4 top-[72px] z-20 flex flex-col items-center gap-2.5 rounded-[20px] p-2.5"
+    style={{ background: '#1a1f30', border: '1px solid rgba(255,255,255,0.07)' }}
+  >
+    <div className="hide-scroll flex max-h-[300px] flex-col items-center gap-2.5 overflow-y-auto">
       {spaces.map((s) => {
         const active = s.id === activeId;
         return (
@@ -19,15 +22,18 @@ const SpacesBar = ({ spaces, activeId, onSelect, onAdd }: Props) => (
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => onSelect(s.id)}
             title={s.name}
-            className="group relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full font-display text-base font-semibold transition-transform hover:scale-105"
+            className="group relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full font-display text-sm font-bold transition-all hover:scale-105"
             style={{
-              background: active ? s.color : 'rgba(52,60,82,0.7)',
-              color: active ? '#0c1024' : '#fff',
-              boxShadow: active ? `0 0 0 3px #202b4b, 0 0 0 5px ${s.color}` : 'none',
+              background: active ? s.color : 'rgba(255,255,255,0.07)',
+              color: active ? '#fff' : 'rgba(255,255,255,0.6)',
+              boxShadow: active ? `0 0 0 2px #1a1f30, 0 0 0 4px ${s.color}99` : 'none',
             }}
           >
             {s.name.trim().charAt(0).toUpperCase() || '·'}
-            <span className="pointer-events-none absolute left-[68px] whitespace-nowrap rounded-lg bg-[#343C52] px-3 py-1.5 font-sans text-xs text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+            <span
+              className="pointer-events-none absolute left-[52px] whitespace-nowrap rounded-lg px-2.5 py-1.5 font-sans text-[11px] text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100"
+              style={{ background: '#2a3152' }}
+            >
               {s.name}
             </span>
           </button>
@@ -35,15 +41,16 @@ const SpacesBar = ({ spaces, activeId, onSelect, onAdd }: Props) => (
       })}
     </div>
 
-    <div className="h-px w-8 bg-white/10" />
+    {spaces.length > 0 && <div className="h-px w-7 bg-white/[0.08]" />}
 
     <button
       onPointerDown={(e) => e.stopPropagation()}
       onClick={onAdd}
       title="Новое пространство"
-      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-[#5D82FF] ring-1 ring-[#5D82FF]/40 transition-colors hover:bg-[#5D82FF] hover:text-[#0c1024]"
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-white/10"
+      style={{ color: 'rgba(255,255,255,0.35)' }}
     >
-      <Icon name="Plus" size={24} />
+      <Icon name="Plus" size={18} />
     </button>
   </div>
 );
