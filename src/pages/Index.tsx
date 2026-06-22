@@ -17,6 +17,54 @@ import {
   uid,
 } from '@/types/board';
 
+// ── geometry ────────────────────────────────────────────────────────────────
+// 4 connector anchor points per node (top / right / bottom / left)
+const ANCHORS = (n: { x: number; y: number }) => ({
+  top:    { x: n.x + NODE_W / 2,  y: n.y },
+  right:  { x: n.x + NODE_W,      y: n.y + NODE_H / 2 },
+  bottom: { x: n.x + NODE_W / 2,  y: n.y + NODE_H },
+  left:   { x: n.x,               y: n.y + NODE_H / 2 },
+});
+
+type AnchorKey = 'top' | 'right' | 'bottom' | 'left';
+
+// Closest pair of anchors between two nodes
+const bestAnchors = (a: Achievement, b: Achievement) => {
+  const aa = ANCHORS(a);
+  const ab = ANCHORS(b);
+  let best = { from: aa.right, to: ab.left, dist: Infinity };
+  for (const ka of Object.keys(aa) as AnchorKey[]) {
+    for (const kb of Object.keys(ab) as AnchorKey[]) {
+      const dx = aa[ka].x - ab[kb].x;
+      const dy = aa[ka].y - ab[kb].y;
+      const d = Math.hypot(dx, dy);
+      if (d < best.dist) best = { from: aa[ka], to: ab[kb], dist: d };
+    }
+  }
+  return best;
+};
+
+// Curved path between two points, shortened at the end to leave room for arrowhead
+const curvePath = (
+  from: { x: number; y: number },
+  to:   { x: number; y: number },
+  shorten = 12,
+) => {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return '';
+  // Shorten "to" point so arrowhead sits outside node
+  const ux = dx / len;
+  const uy = dy / len;
+  const tx = to.x - ux * shorten;
+  const ty = to.y - uy * shorten;
+  // Control points
+  const ctrl = Math.min(Math.abs(dx) * 0.5, 120);
+  return `M ${from.x} ${from.y} C ${from.x + ctrl * ux} ${from.y + ctrl * uy}, ${tx - ctrl * ux} ${ty - ctrl * uy}, ${tx} ${ty}`;
+};
+
+// ── component ────────────────────────────────────────────────────────────────
 const Index = () => {
   const { state, setState } = useBoardStore();
   const { spaces, activeSpaceId, mode, camera } = state;
@@ -24,47 +72,45 @@ const Index = () => {
   const isTask = mode === 'tasks';
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  // connectFrom: { id, anchor }
+  const [connectFrom, setConnectFrom] = useState<{ id: string; anchor: AnchorKey } | null>(null);
   const [mouse, setMouse] = useState({ x: 0, y: 0 });
 
-  // Refs for smooth zoom
   const wrapRef = useRef<HTMLDivElement>(null);
   const panRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
   const camRef = useRef(camera);
   camRef.current = camera;
 
-  // Smooth zoom animation
   const targetScaleRef = useRef(camera.scale);
   const zoomRafRef = useRef<number>();
 
-  const smoothZoomTo = useCallback((targetScale: number, cx: number, cy: number) => {
-    targetScaleRef.current = Math.min(2.5, Math.max(0.3, targetScale));
-    if (zoomRafRef.current) cancelAnimationFrame(zoomRafRef.current);
-
-    const animate = () => {
-      const current = camRef.current;
-      const diff = targetScaleRef.current - current.scale;
-      if (Math.abs(diff) < 0.001) {
+  const smoothZoomTo = useCallback(
+    (targetScale: number, cx: number, cy: number) => {
+      targetScaleRef.current = Math.min(2.5, Math.max(0.25, targetScale));
+      if (zoomRafRef.current) cancelAnimationFrame(zoomRafRef.current);
+      const animate = () => {
+        const cur = camRef.current;
+        const diff = targetScaleRef.current - cur.scale;
+        if (Math.abs(diff) < 0.001) {
+          setState((s) => ({ ...s, camera: { ...s.camera, scale: targetScaleRef.current } }));
+          return;
+        }
+        const next = cur.scale + diff * 0.16;
+        const ratio = next / cur.scale;
         setState((s) => ({
           ...s,
-          camera: { ...s.camera, scale: targetScaleRef.current },
+          camera: {
+            scale: next,
+            x: cx - (cx - s.camera.x) * ratio,
+            y: cy - (cy - s.camera.y) * ratio,
+          },
         }));
-        return;
-      }
-      const next = current.scale + diff * 0.14;
-      const ratio = next / current.scale;
-      setState((s) => ({
-        ...s,
-        camera: {
-          scale: next,
-          x: cx - (cx - s.camera.x) * ratio,
-          y: cy - (cy - s.camera.y) * ratio,
-        },
-      }));
+        zoomRafRef.current = requestAnimationFrame(animate);
+      };
       zoomRafRef.current = requestAnimationFrame(animate);
-    };
-    zoomRafRef.current = requestAnimationFrame(animate);
-  }, [setState]);
+    },
+    [setState],
+  );
 
   const setCamera = (patch: Partial<typeof camera>) =>
     setState((s) => ({ ...s, camera: { ...s.camera, ...patch } }));
@@ -84,8 +130,7 @@ const Index = () => {
     const id = uid();
     if (isTask) {
       const t: Task = {
-        id, x: cx, y: cy,
-        title: 'Новое задание', description: '',
+        id, x: cx, y: cy, title: 'Новое задание', description: '',
         image, color, stars: 1, repeat: 'once', customDays: [], active: false, done: false,
       };
       updateSpace((sp) => ({ ...sp, tasks: [...sp.tasks, t] }));
@@ -141,13 +186,13 @@ const Index = () => {
     }));
   };
 
-  const startConnect = (id: string) => setConnectFrom(id);
+  const startConnect = (id: string, anchor: AnchorKey) => setConnectFrom({ id, anchor });
   const completeConnect = (id: string) => {
-    if (connectFrom && connectFrom !== id) {
+    if (connectFrom && connectFrom.id !== id) {
       updateSpace((sp) =>
-        sp.connections.some((c) => c.from === connectFrom && c.to === id)
+        sp.connections.some((c) => c.from === connectFrom.id && c.to === id)
           ? sp
-          : { ...sp, connections: [...sp.connections, { id: uid(), from: connectFrom, to: id }] },
+          : { ...sp, connections: [...sp.connections, { id: uid(), from: connectFrom.id, to: id }] },
       );
     }
     setConnectFrom(null);
@@ -159,16 +204,51 @@ const Index = () => {
     setSelectedId(null);
   };
 
-  // Wheel: zoom to cursor point
-  const onWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-    const rect = wrapRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-    const delta = e.deltaY < 0 ? 1.1 : 0.9;
-    smoothZoomTo(camRef.current.scale * delta, cx, cy);
-  }, [smoothZoomTo]);
+  // ── center-fit button ─────────────────────────────────────────────────────
+  const centerOnAchievements = () => {
+    const nodes = isTask ? space.tasks : space.achievements;
+    if (!nodes.length) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + NODE_W);
+      maxY = Math.max(maxY, n.y + NODE_H);
+    }
+    const padding = 80;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const contentW = maxX - minX + padding * 2;
+    const contentH = maxY - minY + padding * 2;
+    const s = Math.min(W / contentW, H / contentH, 1.5);
+    const cx = minX - padding;
+    const cy = minY - padding;
+    setState((st) => ({
+      ...st,
+      camera: { scale: s, x: -cx * s + (W - contentW * s) / 2, y: -cy * s + (H - contentH * s) / 2 },
+    }));
+  };
+
+  // ── wheel = pan (Ctrl = zoom) ─────────────────────────────────────────────
+  const onWheel = useCallback(
+    (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        const rect = wrapRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const cx = e.clientX - rect.left;
+        const cy = e.clientY - rect.top;
+        const delta = e.deltaY < 0 ? 1.1 : 0.9;
+        smoothZoomTo(camRef.current.scale * delta, cx, cy);
+      } else {
+        setState((s) => ({
+          ...s,
+          camera: { ...s.camera, x: s.camera.x - e.deltaX, y: s.camera.y - e.deltaY },
+        }));
+      }
+    },
+    [smoothZoomTo, setState],
+  );
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -177,6 +257,7 @@ const Index = () => {
     return () => el.removeEventListener('wheel', onWheel);
   }, [onWheel]);
 
+  // ── pointer handlers (RMB = pan) ─────────────────────────────────────────
   const onPointerDown = (e: React.PointerEvent) => {
     const onBg = e.target === e.currentTarget || (e.target as HTMLElement).dataset.bg;
     if (e.button === 2) {
@@ -196,7 +277,7 @@ const Index = () => {
     if (rect) {
       setMouse({
         x: (e.clientX - rect.left - camera.x) / camera.scale,
-        y: (e.clientY - rect.top - camera.y) / camera.scale,
+        y: (e.clientY - rect.top  - camera.y) / camera.scale,
       });
     }
     if (panRef.current) {
@@ -223,22 +304,17 @@ const Index = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [deleteItem]);
 
-  // Connection lines — straight with slight curve
-  const nodeCenter = (n: { x: number; y: number }) => ({ x: n.x + NODE_W / 2, y: n.y + NODE_H / 2 });
-
-  const linePath = (a: { x: number; y: number }, b: { x: number; y: number }) => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const mx = (a.x + b.x) / 2;
-    const my = (a.y + b.y) / 2;
-    // Slight S-curve
-    const cx1 = a.x + dx * 0.4;
-    const cy1 = a.y;
-    const cx2 = b.x - dx * 0.4;
-    const cy2 = b.y;
-    void mx; void my;
-    return `M ${a.x} ${a.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${b.x} ${b.y}`;
-  };
+  // ── compute locked set ───────────────────────────────────────────────────
+  // An achievement is locked if any direct "from" predecessor is not done
+  const lockedIds = new Set<string>();
+  if (!isTask) {
+    for (const c of space.connections) {
+      const fromNode = space.achievements.find((a) => a.id === c.from);
+      if (fromNode && !fromNode.done) {
+        lockedIds.add(c.to);
+      }
+    }
+  }
 
   const selectedItem = selectedId
     ? isTask
@@ -246,7 +322,12 @@ const Index = () => {
       : space.achievements.find((a) => a.id === selectedId)
     : undefined;
 
-  const fromNode = connectFrom ? space.achievements.find((n) => n.id === connectFrom) : undefined;
+  const fromAnchorPos = connectFrom
+    ? (() => {
+        const n = space.achievements.find((a) => a.id === connectFrom.id);
+        return n ? ANCHORS(n)[connectFrom.anchor] : null;
+      })()
+    : null;
 
   return (
     <div
@@ -264,114 +345,147 @@ const Index = () => {
     >
       <div data-bg="1" className="absolute inset-0" />
 
-      {/* Canvas world */}
+      {/* ── world ─────────────────────────────────────────────────────────── */}
       <div
         className="absolute left-0 top-0 origin-top-left"
-        style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})` }}
+        style={{ transform: `translate(${camera.x}px,${camera.y}px) scale(${camera.scale})` }}
       >
-        {/* Connection lines */}
+        {/* SVG connections */}
         {!isTask && (
-          <svg className="pointer-events-none absolute overflow-visible" style={{ width: 1, height: 1 }}>
+          <svg
+            className="pointer-events-none absolute overflow-visible"
+            style={{ width: 1, height: 1 }}
+          >
+            <defs>
+              <marker
+                id="arrowhead"
+                markerWidth="8"
+                markerHeight="8"
+                refX="4"
+                refY="4"
+                orient="auto-start-reverse"
+              >
+                <path d="M0,1 L0,7 L7,4 Z" fill="rgba(255,255,255,0.55)" />
+              </marker>
+            </defs>
             {space.connections.map((c: Connection) => {
               const a = space.achievements.find((n) => n.id === c.from);
               const b = space.achievements.find((n) => n.id === c.to);
               if (!a || !b) return null;
-              const ca = nodeCenter(a);
-              const cb = nodeCenter(b);
+              const { from, to } = bestAnchors(a, b);
               return (
                 <path
                   key={c.id}
-                  d={linePath(ca, cb)}
+                  d={curvePath(from, to, 14)}
                   fill="none"
-                  stroke="rgba(255,255,255,0.25)"
+                  stroke="rgba(255,255,255,0.28)"
                   strokeWidth={1.5}
+                  markerEnd="url(#arrowhead)"
                 />
               );
             })}
-            {fromNode && (
+            {/* Draft line while connecting */}
+            {fromAnchorPos && (
               <path
-                d={linePath(nodeCenter(fromNode), mouse)}
+                d={curvePath(fromAnchorPos, mouse, 0)}
                 fill="none"
-                stroke="rgba(93,130,255,0.6)"
+                stroke="rgba(93,130,255,0.7)"
                 strokeWidth={1.5}
-                strokeDasharray="6 4"
+                strokeDasharray="5 4"
                 className="flow-line"
               />
             )}
           </svg>
         )}
 
-        {!isTask && space.achievements.map((n) => (
-          <AchievementNode
-            key={n.id}
-            node={n}
-            selected={selectedId === n.id}
-            scale={camera.scale}
-            connecting={!!connectFrom}
-            onSelect={(id) => setSelectedId(id)}
-            onMove={moveItem}
-            onStartConnect={startConnect}
-            onCompleteConnect={completeConnect}
-            onMarkDone={(id) => updateSpace((sp) => ({
-              ...sp,
-              achievements: sp.achievements.map((a) => a.id === id ? { ...a, done: true } : a),
-            }))}
-            onMarkUndone={(id) => updateSpace((sp) => ({
-              ...sp,
-              achievements: sp.achievements.map((a) => a.id === id ? { ...a, done: false } : a),
-            }))}
-          />
-        ))}
+        {/* Achievement nodes */}
+        {!isTask &&
+          space.achievements.map((n) => (
+            <AchievementNode
+              key={n.id}
+              node={n}
+              selected={selectedId === n.id}
+              locked={lockedIds.has(n.id)}
+              scale={camera.scale}
+              connecting={!!connectFrom}
+              onSelect={(id) => setSelectedId(id)}
+              onMove={moveItem}
+              onStartConnect={startConnect}
+              onCompleteConnect={completeConnect}
+              onMarkDone={(id) =>
+                updateSpace((sp) => ({
+                  ...sp,
+                  achievements: sp.achievements.map((a) =>
+                    a.id === id ? { ...a, done: true } : a,
+                  ),
+                }))
+              }
+              onMarkUndone={(id) =>
+                updateSpace((sp) => ({
+                  ...sp,
+                  achievements: sp.achievements.map((a) =>
+                    a.id === id ? { ...a, done: false } : a,
+                  ),
+                }))
+              }
+            />
+          ))}
 
-        {isTask && space.tasks.map((t) => (
-          <TaskNode
-            key={t.id}
-            node={t}
-            selected={selectedId === t.id}
-            scale={camera.scale}
-            onSelect={(id) => setSelectedId(id)}
-            onMove={moveItem}
-            onToggleDone={toggleDone}
-          />
-        ))}
+        {/* Task nodes */}
+        {isTask &&
+          space.tasks.map((t) => (
+            <TaskNode
+              key={t.id}
+              node={t}
+              selected={selectedId === t.id}
+              scale={camera.scale}
+              onSelect={(id) => setSelectedId(id)}
+              onMove={moveItem}
+              onToggleDone={toggleDone}
+            />
+          ))}
       </div>
 
-      {/* Top bar — matches screenshot: logo left, tabs center */}
-      <div className="pointer-events-none fixed inset-x-0 top-0 z-20 flex h-14 items-center border-b border-white/[0.06]"
-        style={{ background: 'rgba(26,31,48,0.95)', backdropFilter: 'blur(12px)' }}>
+      {/* ── top bar ──────────────────────────────────────────────────────── */}
+      <div
+        className="pointer-events-none fixed inset-x-0 top-0 z-20 flex h-14 items-center border-b border-white/[0.06]"
+        style={{ background: 'rgba(22,27,44,0.96)', backdropFilter: 'blur(12px)' }}
+      >
         <div className="pointer-events-auto flex items-center gap-2 px-5">
-          <div className="flex items-center gap-2">
-            <span className="font-display text-lg font-bold" style={{ color: '#5D82FF' }}>✦</span>
-            <span className="font-display text-sm font-bold text-white tracking-wide">ACHIEVEMENTY</span>
-          </div>
+          <span className="font-display text-base font-bold tracking-widest" style={{ color: '#5D82FF' }}>
+            ✦ ACHIEVEMENTY
+          </span>
         </div>
         <div className="pointer-events-auto mx-auto">
           <ModeSwitch mode={mode} onChange={(m) => setState((s) => ({ ...s, mode: m }))} />
         </div>
-        <div className="w-40" />
+        <div className="w-48" />
       </div>
 
-      {/* Left: spaces + active tasks panel */}
-      <div className="fixed left-5 top-20 z-20 flex flex-col gap-3">
+      {/* ── left sidebar ─────────────────────────────────────────────────── */}
+      <div className="fixed left-4 top-20 z-20 flex flex-col gap-3">
         {isTask && <ActiveTasksPanel tasks={space.tasks} />}
       </div>
 
       <SpacesBar
         spaces={spaces}
         activeId={activeSpaceId}
-        onSelect={(id) => { setState((s) => ({ ...s, activeSpaceId: id })); setSelectedId(null); }}
+        onSelect={(id) => {
+          setState((s) => ({ ...s, activeSpaceId: id }));
+          setSelectedId(null);
+        }}
         onAdd={addSpace}
       />
 
+      {/* ── toolbar ──────────────────────────────────────────────────────── */}
       <Toolbar
         isTask={isTask}
         onAdd={addItem}
         connecting={!!connectFrom}
-        onToggleConnect={() =>
-          setConnectFrom(connectFrom ? null : selectedId || space.achievements[0]?.id || null)
-        }
+        onToggleConnect={() => setConnectFrom(connectFrom ? null : null)}
       />
 
+      {/* ── property panel ───────────────────────────────────────────────── */}
       {selectedItem && (
         <PropertyPanel
           item={selectedItem}
@@ -381,28 +495,27 @@ const Index = () => {
         />
       )}
 
+      {/* ── connect hint ─────────────────────────────────────────────────── */}
       {connectFrom && (
         <div
           className="fixed left-1/2 top-20 z-20 -translate-x-1/2 rounded-full px-4 py-1.5 font-sans text-xs font-medium text-white animate-pop-in"
           style={{ background: 'rgba(93,130,255,0.2)', border: '1px solid rgba(93,130,255,0.4)' }}
         >
-          Кликните по ачивке, чтобы создать связь · Esc для отмены
+          Наведите на ачивку и кликните · Esc для отмены
         </div>
       )}
 
-      {/* Fullscreen hint bottom-left */}
+      {/* ── bottom-left: center button ───────────────────────────────────── */}
       <button
         onPointerDown={(e) => e.stopPropagation()}
-        onClick={() => {
-          if (!document.fullscreenElement) wrapRef.current?.requestFullscreen?.();
-          else document.exitFullscreen?.();
-        }}
-        className="fixed bottom-5 left-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl text-white/40 hover:text-white/80 transition-colors"
-        style={{ background: 'rgba(32,43,75,0.7)' }}
-        title="Полный экран"
+        onClick={centerOnAchievements}
+        className="fixed bottom-5 left-5 z-20 flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:text-white"
+        style={{ background: 'rgba(32,43,75,0.85)', color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.08)' }}
+        title="Центрировать на ачивках"
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M1 1h4v2H3v2H1V1zm10 0h4v4h-2V3h-2V1zM1 11h2v2h2v2H1v-4zm12 2h-2v2h4v-4h-2v2z"/>
+          <path d="M1 1h5v1.5H2.5V7H1V1zm9 0h5v6h-1.5V2.5H10V1zM1 9h1.5v4H7v1.5H1V9zm12.5 4H10v1.5h6V9h-1.5v4z"/>
+          <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
         </svg>
       </button>
     </div>

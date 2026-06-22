@@ -166,3 +166,12 @@
     stroke-dashoffset: 0;
   }
 }
+
+/* connector dot fade */
+.connector-dot {
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.connector-dot-visible {
+  opacity: 1;
+}

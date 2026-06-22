@@ -17,24 +17,35 @@ interface Props {
   onDelete: () => void;
 }
 
-const Label = ({ children }: { children: React.ReactNode }) => (
-  <label className="mt-4 block font-sans text-[11px] uppercase tracking-wider text-white/35">
-    {children}
-  </label>
-);
-
 const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
   const task = item as Task;
   const ach = item as Achievement;
   const [showCrop, setShowCrop] = useState(false);
 
+  const isBoss = !isTask && !!ach.isBoss;
+
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => onPatch({ image: reader.result as string, cropX: 50, cropY: 50, cropScale: 1 });
+    reader.onload = () =>
+      onPatch({ image: reader.result as string, cropX: 50, cropY: 50, cropScale: 1 });
     reader.readAsDataURL(file);
   };
+
+  const panelBg = isBoss ? '#1a0808' : '#1e2540';
+  const panelBorder = isBoss ? 'rgba(220,38,38,0.35)' : 'rgba(255,255,255,0.08)';
+  const labelColor = isBoss ? 'rgba(252,165,165,0.5)' : 'rgba(255,255,255,0.35)';
+  const inputBorder = isBoss ? 'rgba(220,38,38,0.25)' : 'rgba(255,255,255,0.1)';
+  const inputFocus = isBoss ? 'rgba(220,38,38,0.5)' : 'rgba(93,130,255,0.5)';
+  const accentColor = isBoss ? '#dc2626' : '#5D82FF';
+
+  const Label = ({ children }: { children: React.ReactNode }) => (
+    <label className="mt-4 block font-sans text-[11px] uppercase tracking-wider"
+      style={{ color: labelColor }}>
+      {children}
+    </label>
+  );
 
   return (
     <>
@@ -43,22 +54,72 @@ const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
         onWheel={(e) => e.stopPropagation()}
         onContextMenu={(e) => e.stopPropagation()}
         className="hide-scroll fixed right-5 top-[72px] z-30 max-h-[calc(100vh-90px)] w-64 overflow-y-auto rounded-[20px] p-4 animate-pop-in"
-        style={{ background: '#1e2540', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 20px 60px -10px rgba(0,0,0,0.7)' }}
+        style={{
+          background: panelBg,
+          border: `1px solid ${panelBorder}`,
+          boxShadow: isBoss
+            ? '0 20px 60px -10px rgba(120,0,0,0.6), 0 0 24px -8px rgba(220,38,38,0.3)'
+            : '0 20px 60px -10px rgba(0,0,0,0.7)',
+        }}
       >
+        {/* Header */}
         <div className="mb-3 flex items-center justify-between">
-          <p className="font-display text-sm font-semibold text-white/90">
-            {isTask ? 'Задание' : 'Ачивка'}
-          </p>
-          <button onClick={onDelete} className="text-white/30 hover:text-red-400 transition-colors" title="Удалить">
-            <Icon name="Trash2" size={15} />
-          </button>
+          <div className="flex items-center gap-2">
+            {isBoss && (
+              <span className="text-lg" style={{ filter: 'drop-shadow(0 0 6px #dc2626)' }}>☠</span>
+            )}
+            <p className="font-display text-sm font-semibold"
+              style={isBoss ? { color: '#fbbf24', textShadow: '0 0 10px #f59e0b88' } : { color: 'rgba(255,255,255,0.9)' }}>
+              {isTask ? 'Задание' : isBoss ? 'БОСС' : 'Ачивка'}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {/* Boss toggle — only for achievements */}
+            {!isTask && (
+              <button
+                onClick={() => onPatch({ isBoss: !ach.isBoss })}
+                title={isBoss ? 'Снять статус босса' : 'Сделать боссом'}
+                className="flex h-7 w-7 items-center justify-center rounded-lg transition-all"
+                style={{
+                  background: isBoss ? 'rgba(220,38,38,0.25)' : 'rgba(255,255,255,0.05)',
+                  border: isBoss ? '1px solid rgba(220,38,38,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                  filter: isBoss ? 'drop-shadow(0 0 6px #dc2626)' : 'none',
+                }}
+              >
+                <span style={{ fontSize: 15 }}>☠</span>
+              </button>
+            )}
+            <button
+              onClick={onDelete}
+              className="text-white/30 hover:text-red-400 transition-colors"
+              title="Удалить"
+            >
+              <Icon name="Trash2" size={15} />
+            </button>
+          </div>
         </div>
+
+        {/* Boss banner */}
+        {isBoss && (
+          <div
+            className="mb-3 rounded-xl px-3 py-2 font-sans text-xs leading-snug"
+            style={{ background: 'rgba(127,29,29,0.4)', border: '1px solid rgba(220,38,38,0.3)', color: '#fca5a5' }}
+          >
+            ⚠ Это ачивка-босс. Она обозначает главную цель или вызов.
+          </div>
+        )}
 
         <Label>Название</Label>
         <input
           value={item.title}
           onChange={(e) => onPatch({ title: e.target.value })}
-          className="mt-1 w-full rounded-xl bg-black/30 px-3 py-2 font-sans text-sm text-white outline-none ring-1 ring-white/10 focus:ring-[#5D82FF]/50"
+          className="mt-1 w-full rounded-xl bg-black/30 px-3 py-2 font-sans text-sm text-white outline-none ring-1 transition-shadow"
+          style={{
+            '--tw-ring-color': inputBorder,
+            boxShadow: `0 0 0 1px ${inputBorder}`,
+          } as React.CSSProperties}
+          onFocus={(e) => (e.target.style.boxShadow = `0 0 0 2px ${inputFocus}`)}
+          onBlur={(e) => (e.target.style.boxShadow = `0 0 0 1px ${inputBorder}`)}
         />
 
         <Label>Описание</Label>
@@ -66,7 +127,10 @@ const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
           value={item.description}
           onChange={(e) => onPatch({ description: e.target.value })}
           rows={2}
-          className="hide-scroll mt-1 w-full resize-none rounded-xl bg-black/30 px-3 py-2 font-sans text-sm text-white outline-none ring-1 ring-white/10 focus:ring-[#5D82FF]/50"
+          className="hide-scroll mt-1 w-full resize-y rounded-xl bg-black/30 px-3 py-2 font-sans text-sm text-white outline-none"
+          style={{ boxShadow: `0 0 0 1px ${inputBorder}`, minHeight: 56, maxHeight: 200 }}
+          onFocus={(e) => (e.target.style.boxShadow = `0 0 0 2px ${inputFocus}`)}
+          onBlur={(e) => (e.target.style.boxShadow = `0 0 0 1px ${inputBorder}`)}
         />
 
         <Label>Цвет рамки и текста</Label>
@@ -78,7 +142,7 @@ const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
               className="h-6 w-6 rounded-full transition-transform hover:scale-110"
               style={{
                 background: c,
-                boxShadow: item.color === c ? `0 0 0 2px #1e2540, 0 0 0 4px ${c}` : 'none',
+                boxShadow: item.color === c ? `0 0 0 2px ${panelBg}, 0 0 0 4px ${c}` : 'none',
               }}
             />
           ))}
@@ -86,7 +150,10 @@ const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
 
         <Label>Картинка</Label>
         <div className="mt-2 flex gap-2">
-          <label className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-white/5 py-2 font-sans text-xs text-white/75 ring-1 ring-white/10 hover:bg-white/10 transition-colors">
+          <label
+            className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl py-2 font-sans text-xs text-white/70 transition-colors hover:bg-white/10"
+            style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${inputBorder}` }}
+          >
             <Icon name="Upload" size={13} />
             Загрузить
             <input type="file" accept="image/*" className="hidden" onChange={handleFile} />
@@ -94,7 +161,8 @@ const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
           {!isTask && item.image && (
             <button
               onClick={() => setShowCrop(true)}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 font-sans text-xs text-white/75 ring-1 ring-white/10 hover:bg-white/10 transition-colors"
+              className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 font-sans text-xs text-white/70 transition-colors hover:bg-white/10"
+              style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${inputBorder}` }}
               title="Кадрировать"
             >
               <Icon name="Crop" size={13} />
@@ -103,9 +171,8 @@ const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
           )}
         </div>
 
-        {/* Image preview */}
         {item.image && (
-          <div className="mt-2 overflow-hidden rounded-xl" style={{ height: 80 }}>
+          <div className="mt-2 overflow-hidden rounded-xl" style={{ height: 70 }}>
             <img
               src={item.image}
               className="h-full w-full object-cover"
@@ -127,7 +194,7 @@ const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
                   key={s}
                   onClick={() => onPatch({ stars: s })}
                   className="text-xl leading-none transition-transform hover:scale-110"
-                  style={{ color: s <= task.stars ? '#F59E0B' : 'rgba(255,255,255,0.18)' }}
+                  style={{ color: s <= task.stars ? '#F59E0B' : 'rgba(255,255,255,0.15)' }}
                 >
                   ★
                 </button>
@@ -142,8 +209,9 @@ const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
                   onClick={() => onPatch({ repeat: r })}
                   className="rounded-lg px-3 py-1.5 text-left font-sans text-xs transition-colors"
                   style={{
-                    background: task.repeat === r ? '#5D82FF' : 'rgba(52,60,82,0.5)',
-                    color: task.repeat === r ? '#fff' : 'rgba(255,255,255,0.7)',
+                    background: task.repeat === r ? accentColor + '33' : 'rgba(52,60,82,0.4)',
+                    color: task.repeat === r ? '#fff' : 'rgba(255,255,255,0.65)',
+                    border: `1px solid ${task.repeat === r ? accentColor + '55' : 'transparent'}`,
                   }}
                 >
                   {REPEAT_LABELS[r]}
@@ -160,13 +228,15 @@ const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
                       key={d}
                       onClick={() =>
                         onPatch({
-                          customDays: on ? task.customDays.filter((x) => x !== i) : [...task.customDays, i],
+                          customDays: on
+                            ? task.customDays.filter((x) => x !== i)
+                            : [...task.customDays, i],
                         })
                       }
                       className="h-8 w-8 rounded-lg font-sans text-[11px] transition-colors"
                       style={{
-                        background: on ? '#5D82FF' : 'rgba(52,60,82,0.5)',
-                        color: on ? '#fff' : 'rgba(255,255,255,0.6)',
+                        background: on ? accentColor : 'rgba(52,60,82,0.4)',
+                        color: on ? '#fff' : 'rgba(255,255,255,0.55)',
                       }}
                     >
                       {d}
@@ -179,10 +249,10 @@ const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
             <Label>Активность</Label>
             <button
               onClick={() => onPatch({ active: !task.active })}
-              className="mt-1.5 flex w-full items-center justify-between rounded-xl px-3 py-2 font-sans text-sm transition-colors"
+              className="mt-1.5 flex w-full items-center justify-between rounded-xl px-3 py-2 font-sans text-sm transition-all"
               style={{
-                background: task.active ? '#2DD4BF22' : 'rgba(52,60,82,0.4)',
-                color: task.active ? '#2DD4BF' : 'rgba(255,255,255,0.7)',
+                background: task.active ? '#2DD4BF18' : 'rgba(52,60,82,0.35)',
+                color: task.active ? '#2DD4BF' : 'rgba(255,255,255,0.65)',
                 border: `1px solid ${task.active ? '#2DD4BF44' : 'transparent'}`,
               }}
             >
@@ -191,6 +261,9 @@ const PropertyPanel = ({ item, isTask, onPatch, onDelete }: Props) => {
             </button>
           </>
         )}
+
+        {/* Bottom spacer */}
+        <div className="h-2" />
       </div>
 
       {showCrop && !isTask && (

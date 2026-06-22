@@ -14,6 +14,7 @@ export interface Achievement {
   cropX?: number;
   cropY?: number;
   cropScale?: number;
+  isBoss?: boolean;
 }
 
 export interface Task {
