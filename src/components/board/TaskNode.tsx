@@ -1,49 +1,35 @@
 import { useRef, useState } from 'react';
 import Icon from '@/components/ui/icon';
-import { Achievement } from '@/types/board';
+import { Task, REPEAT_LABELS } from '@/types/board';
 
 interface Props {
-  node: Achievement;
+  node: Task;
   selected: boolean;
   scale: number;
-  connecting: boolean;
-  onSelect: (id: string, additive: boolean) => void;
+  onSelect: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
-  onStartConnect: (id: string) => void;
-  onCompleteConnect: (id: string) => void;
+  onToggleDone: (id: string) => void;
 }
 
-export const NODE_W = 168;
-export const NODE_H = 210;
+export const TASK_W = 168;
+export const TASK_H = 232;
 
 type Side = 'right' | 'top' | 'bottom' | 'left';
 
-const AchievementNode = ({
-  node,
-  selected,
-  scale,
-  connecting,
-  onSelect,
-  onMove,
-  onStartConnect,
-  onCompleteConnect,
-}: Props) => {
-  const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(
-    null,
-  );
+const PERIM = (168 + 220) * 2;
+
+const TaskNode = ({ node, selected, scale, onSelect, onMove, onToggleDone }: Props) => {
+  const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [side, setSide] = useState<Side>('right');
   const [hover, setHover] = useState(false);
+  const [justDone, setJustDone] = useState(false);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    if (connecting) {
-      onCompleteConnect(node.id);
-      return;
-    }
-    onSelect(node.id, e.shiftKey);
-    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: node.x, oy: node.y, moved: false };
+    onSelect(node.id);
+    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: node.x, oy: node.y };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
@@ -51,7 +37,6 @@ const AchievementNode = ({
     if (!dragRef.current) return;
     const dx = (e.clientX - dragRef.current.sx) / scale;
     const dy = (e.clientY - dragRef.current.sy) / scale;
-    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragRef.current.moved = true;
     onMove(node.id, dragRef.current.ox + dx, dragRef.current.oy + dy);
   };
 
@@ -71,6 +56,12 @@ const AchievementNode = ({
     setHover(true);
   };
 
+  const handleCheck = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (!node.done) setJustDone(true);
+    onToggleDone(node.id);
+  };
+
   const tipPos: Record<Side, string> = {
     right: 'left-full top-1/2 -translate-y-1/2 ml-2',
     left: 'right-full top-1/2 -translate-y-1/2 mr-2',
@@ -78,11 +69,14 @@ const AchievementNode = ({
     bottom: 'top-full left-1/2 -translate-x-1/2 mt-2',
   };
 
+  const filled = node.done;
+  const animate = filled && justDone;
+
   return (
     <div
       ref={wrapRef}
       className="absolute no-select"
-      style={{ left: node.x, top: node.y, width: NODE_W, touchAction: 'none' }}
+      style={{ left: node.x, top: node.y, width: TASK_W, touchAction: 'none' }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -93,13 +87,33 @@ const AchievementNode = ({
         className="group relative animate-pop-in rounded-[24px] p-2.5"
         style={{
           background: '#1E2740',
-          border: `3px solid ${node.color}`,
+          border: `3px solid ${filled ? 'transparent' : node.color + '55'}`,
           boxShadow: selected
             ? `0 0 0 4px ${node.color}33, 0 16px 44px -10px ${node.color}99`
             : '0 10px 30px -12px rgba(0,0,0,0.7)',
-          cursor: connecting ? 'crosshair' : 'grab',
+          cursor: 'grab',
         }}
       >
+        <svg className="pointer-events-none absolute inset-0 h-full w-full" style={{ overflow: 'visible' }}>
+          <rect
+            x="1.5"
+            y="1.5"
+            width="calc(100% - 3px)"
+            height="calc(100% - 3px)"
+            rx="22"
+            fill="none"
+            stroke={node.color}
+            strokeWidth="3"
+            strokeDasharray={PERIM}
+            strokeDashoffset={filled ? 0 : PERIM}
+            style={
+              animate
+                ? { animation: `frame-draw 1.8s linear forwards` }
+                : undefined
+            }
+          />
+        </svg>
+
         <div
           className="aspect-square w-full overflow-hidden rounded-[16px]"
           style={{ background: `linear-gradient(135deg, ${node.color}33, ${node.color}08)` }}
@@ -113,15 +127,12 @@ const AchievementNode = ({
         </div>
 
         <button
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            onStartConnect(node.id);
-          }}
-          className="absolute -right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-[#0c1024] opacity-0 transition-opacity group-hover:opacity-100"
-          style={{ background: node.color }}
-          title="Создать связь"
+          onPointerDown={handleCheck}
+          className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full text-[#0c1024] transition-transform hover:scale-110"
+          style={{ background: filled ? node.color : '#343C52', color: filled ? '#0c1024' : '#fff' }}
+          title="Выполнить задание"
         >
-          <Icon name="Link2" size={14} />
+          <Icon name="Check" size={16} />
         </button>
       </div>
 
@@ -130,6 +141,10 @@ const AchievementNode = ({
         style={{ background: '#202B4B', border: `1px solid ${node.color}55` }}
       >
         <p className="truncate font-display text-sm font-semibold text-white">{node.title}</p>
+        <div className="mt-0.5 flex items-center justify-center gap-1 text-[10px] text-[#F59E0B]">
+          {'★'.repeat(node.stars)}
+          <span className="text-white/40">{REPEAT_LABELS[node.repeat]}</span>
+        </div>
       </div>
 
       {hover && node.description && (
@@ -146,4 +161,4 @@ const AchievementNode = ({
   );
 };
 
-export default AchievementNode;
+export default TaskNode;

@@ -102,24 +102,39 @@
 
 @layer utilities {
   .canvas-grid {
-    background-color: #0a0c10;
+    background-color: #232938;
     background-image: radial-gradient(
       circle at 1px 1px,
-      rgba(255, 255, 255, 0.06) 1px,
+      rgba(93, 130, 255, 0.1) 1px,
       transparent 0
     );
   }
 
   .glass {
-    background: rgba(20, 24, 32, 0.72);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(32, 43, 75, 0.82);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(93, 130, 255, 0.18);
+    box-shadow: 0 16px 50px -12px rgba(0, 0, 0, 0.55);
+  }
+
+  .panel {
+    background: #202b4b;
+    border: 1px solid rgba(93, 130, 255, 0.18);
+    box-shadow: 0 20px 60px -14px rgba(0, 0, 0, 0.6);
   }
 
   .no-select {
     user-select: none;
     -webkit-user-select: none;
+  }
+
+  .hide-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .hide-scroll::-webkit-scrollbar {
+    display: none;
   }
 }
 
@@ -144,4 +159,10 @@
 }
 .flow-line {
   animation: dash 0.6s linear infinite;
+}
+
+@keyframes frame-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
 }

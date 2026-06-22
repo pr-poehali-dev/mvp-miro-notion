@@ -1,326 +1,331 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import Icon from '@/components/ui/icon';
-import AchievementNode from '@/components/board/AchievementNode';
+import { useEffect, useRef, useState } from 'react';
+import AchievementNode, { NODE_W, NODE_H } from '@/components/board/AchievementNode';
+import TaskNode from '@/components/board/TaskNode';
 import Toolbar from '@/components/board/Toolbar';
-import InspectorPanel from '@/components/board/InspectorPanel';
-import TopBar from '@/components/board/TopBar';
-import { Achievement, Connection, COLORS, DEFAULT_IMAGES } from '@/types/board';
-
-const NODE_W = 180;
-const NODE_H = 232;
-
-const uid = () => Math.random().toString(36).slice(2, 9);
-
-const initialNodes: Achievement[] = [
-  { id: 'a1', x: 200, y: 220, title: 'Первый запуск', image: DEFAULT_IMAGES[1], color: '#2DD4BF' },
-  { id: 'a2', x: 560, y: 400, title: 'Первая победа', image: DEFAULT_IMAGES[0], color: '#F59E0B' },
-];
+import SpacesBar from '@/components/board/SpacesBar';
+import ModeSwitch from '@/components/board/ModeSwitch';
+import PropertyPanel from '@/components/board/PropertyPanel';
+import ActiveTasksPanel from '@/components/board/ActiveTasksPanel';
+import { useBoardStore, newSpace } from '@/hooks/useBoardStore';
+import {
+  Achievement,
+  Task,
+  Connection,
+  Space,
+  DEFAULT_IMAGES,
+  COLORS,
+  uid,
+} from '@/types/board';
 
 const Index = () => {
-  const [nodes, setNodes] = useState<Achievement[]>(initialNodes);
-  const [connections, setConnections] = useState<Connection[]>([
-    { id: 'c1', from: 'a1', to: 'a2' },
-  ]);
-  const [selected, setSelected] = useState<string[]>([]);
+  const { state, setState } = useBoardStore();
+  const { spaces, activeSpaceId, mode, camera } = state;
+  const space = spaces.find((s) => s.id === activeSpaceId) || spaces[0];
+  const isTask = mode === 'tasks';
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [scale, setScale] = useState(1);
-  const [saved, setSaved] = useState(true);
-  const [history, setHistory] = useState<string[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [showKeys, setShowKeys] = useState(false);
   const [mouse, setMouse] = useState({ x: 0, y: 0 });
 
   const panRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  const touch = () => setSaved(false);
+  const setCamera = (patch: Partial<typeof camera>) =>
+    setState((s) => ({ ...s, camera: { ...s.camera, ...patch } }));
 
-  const addNode = useCallback(() => {
+  const updateSpace = (fn: (sp: Space) => Space) =>
+    setState((s) => ({
+      ...s,
+      spaces: s.spaces.map((sp) => (sp.id === activeSpaceId ? fn(sp) : sp)),
+    }));
+
+  const addItem = () => {
+    const cx = (-camera.x + window.innerWidth / 2) / camera.scale - NODE_W / 2;
+    const cy = (-camera.y + window.innerHeight / 2) / camera.scale - NODE_H / 2;
+    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    const image = DEFAULT_IMAGES[Math.floor(Math.random() * DEFAULT_IMAGES.length)];
     const id = uid();
-    const cx = (-pan.x + window.innerWidth / 2) / scale - NODE_W / 2;
-    const cy = (-pan.y + window.innerHeight / 2) / scale - NODE_H / 2;
-    setNodes((n) => [
-      ...n,
-      {
+    if (isTask) {
+      const t: Task = {
+        id,
+        x: cx,
+        y: cy,
+        title: 'Новое задание',
+        description: '',
+        image,
+        color,
+        stars: 1,
+        repeat: 'once',
+        customDays: [],
+        active: false,
+        done: false,
+      };
+      updateSpace((sp) => ({ ...sp, tasks: [...sp.tasks, t] }));
+    } else {
+      const a: Achievement = {
         id,
         x: cx,
         y: cy,
         title: 'Новая ачивка',
-        image: DEFAULT_IMAGES[Math.floor(Math.random() * DEFAULT_IMAGES.length)],
-        color: COLORS[Math.floor(Math.random() * COLORS.length)],
-      },
-    ]);
-    setSelected([id]);
-    touch();
-  }, [pan, scale]);
-
-  const deleteSelected = useCallback(() => {
-    if (!selected.length) return;
-    setNodes((n) => n.filter((x) => !selected.includes(x.id)));
-    setConnections((c) => c.filter((x) => !selected.includes(x.from) && !selected.includes(x.to)));
-    setSelected([]);
-    touch();
-  }, [selected]);
-
-  const moveNode = (id: string, x: number, y: number) => {
-    setNodes((n) => n.map((node) => (node.id === id ? { ...node, x, y } : node)));
-    touch();
+        description: '',
+        image,
+        color,
+      };
+      updateSpace((sp) => ({ ...sp, achievements: [...sp.achievements, a] }));
+    }
+    setSelectedId(id);
   };
 
-  const updateNode = (id: string, patch: Partial<Achievement>) => {
-    setNodes((n) => n.map((node) => (node.id === id ? { ...node, ...patch } : node)));
-    touch();
+  const patchItem = (patch: Partial<Achievement & Task>) => {
+    if (!selectedId) return;
+    updateSpace((sp) =>
+      isTask
+        ? { ...sp, tasks: sp.tasks.map((t) => (t.id === selectedId ? { ...t, ...patch } : t)) }
+        : {
+            ...sp,
+            achievements: sp.achievements.map((a) =>
+              a.id === selectedId ? { ...a, ...patch } : a,
+            ),
+          },
+    );
   };
 
-  const selectNode = (id: string, additive: boolean) => {
-    setSelected((s) => (additive ? (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]) : [id]));
+  const moveItem = (id: string, x: number, y: number) => {
+    updateSpace((sp) =>
+      isTask
+        ? { ...sp, tasks: sp.tasks.map((t) => (t.id === id ? { ...t, x, y } : t)) }
+        : { ...sp, achievements: sp.achievements.map((a) => (a.id === id ? { ...a, x, y } : a)) },
+    );
   };
 
-  const startConnect = (id: string) => {
-    setConnectFrom(id);
+  const deleteItem = () => {
+    if (!selectedId) return;
+    updateSpace((sp) =>
+      isTask
+        ? { ...sp, tasks: sp.tasks.filter((t) => t.id !== selectedId) }
+        : {
+            ...sp,
+            achievements: sp.achievements.filter((a) => a.id !== selectedId),
+            connections: sp.connections.filter(
+              (c) => c.from !== selectedId && c.to !== selectedId,
+            ),
+          },
+    );
+    setSelectedId(null);
   };
 
+  const toggleDone = (id: string) => {
+    updateSpace((sp) => ({
+      ...sp,
+      tasks: sp.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
+    }));
+  };
+
+  const startConnect = (id: string) => setConnectFrom(id);
   const completeConnect = (id: string) => {
     if (connectFrom && connectFrom !== id) {
-      setConnections((c) =>
-        c.some((x) => x.from === connectFrom && x.to === id)
-          ? c
-          : [...c, { id: uid(), from: connectFrom, to: id }],
+      updateSpace((sp) =>
+        sp.connections.some((c) => c.from === connectFrom && c.to === id)
+          ? sp
+          : { ...sp, connections: [...sp.connections, { id: uid(), from: connectFrom, to: id }] },
       );
-      touch();
     }
     setConnectFrom(null);
   };
 
-  const zoom = (dir: number) => setScale((s) => Math.min(2.5, Math.max(0.3, s + dir * 0.15)));
+  const addSpace = () => {
+    const sp = newSpace(spaces.length);
+    setState((s) => ({ ...s, spaces: [...s.spaces, sp], activeSpaceId: sp.id }));
+    setSelectedId(null);
+  };
 
   const onWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      setScale((s) => Math.min(2.5, Math.max(0.3, s - e.deltaY * 0.002)));
-    } else {
-      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+    setCamera({ scale: Math.min(2.5, Math.max(0.3, camera.scale - e.deltaY * 0.0018)) });
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    const onBg = e.target === e.currentTarget || (e.target as HTMLElement).dataset.bg;
+    if (e.button === 2) {
+      panRef.current = { sx: e.clientX, sy: e.clientY, ox: camera.x, oy: camera.y };
+      return;
+    }
+    if (e.button === 0 && onBg) {
+      setSelectedId(null);
+      setConnectFrom(null);
     }
   };
 
-  const onCanvasPointerDown = (e: React.PointerEvent) => {
-    if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset.bg) return;
-    setSelected([]);
-    setConnectFrom(null);
-    panRef.current = { sx: e.clientX, sy: e.clientY, ox: pan.x, oy: pan.y };
-  };
-
-  const onCanvasPointerMove = (e: React.PointerEvent) => {
+  const onPointerMove = (e: React.PointerEvent) => {
     const rect = wrapRef.current?.getBoundingClientRect();
     if (rect) {
       setMouse({
-        x: (e.clientX - rect.left - pan.x) / scale,
-        y: (e.clientY - rect.top - pan.y) / scale,
+        x: (e.clientX - rect.left - camera.x) / camera.scale,
+        y: (e.clientY - rect.top - camera.y) / camera.scale,
       });
     }
     if (panRef.current) {
-      setPan({
+      setCamera({
         x: panRef.current.ox + (e.clientX - panRef.current.sx),
         y: panRef.current.oy + (e.clientY - panRef.current.sy),
       });
     }
   };
 
-  const onCanvasPointerUp = () => {
+  const onPointerUp = () => {
     panRef.current = null;
-  };
-
-  const doSave = () => {
-    setSaved(true);
-    setHistory((h) => [`Версия ${h.length + 1} · ${new Date().toLocaleTimeString('ru')}`, ...h]);
-  };
-
-  const doExport = () => {
-    const data = JSON.stringify({ achievements: nodes, connections }, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'achieve-board.json';
-    a.click();
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
-      if (e.key === 'n' || e.key === 'т') addNode();
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        doSave();
-      }
-      if (e.key === '?') setShowKeys((v) => !v);
+      if (e.key === 'Delete' || e.key === 'Backspace') deleteItem();
       if (e.key === 'Escape') {
         setConnectFrom(null);
-        setSelected([]);
+        setSelectedId(null);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [addNode, deleteSelected]);
+  });
 
-  const center = (n: Achievement) => ({ x: n.x + NODE_W / 2, y: n.y + 90 });
+  const center = (n: { x: number; y: number }) => ({ x: n.x + NODE_W / 2, y: n.y + 90 });
   const path = (a: { x: number; y: number }, b: { x: number; y: number }) => {
     const dx = Math.abs(b.x - a.x) * 0.5 + 30;
     return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
   };
 
-  const activeNode = selected.length === 1 ? nodes.find((n) => n.id === selected[0]) : undefined;
-  const fromNode = connectFrom ? nodes.find((n) => n.id === connectFrom) : undefined;
+  const selectedItem = selectedId
+    ? isTask
+      ? space.tasks.find((t) => t.id === selectedId)
+      : space.achievements.find((a) => a.id === selectedId)
+    : undefined;
+
+  const fromNode = connectFrom ? space.achievements.find((n) => n.id === connectFrom) : undefined;
 
   return (
     <div
       ref={wrapRef}
       className="canvas-grid relative h-screen w-screen overflow-hidden"
       style={{
-        backgroundSize: `${24 * scale}px ${24 * scale}px`,
-        backgroundPosition: `${pan.x}px ${pan.y}px`,
+        backgroundSize: `${24 * camera.scale}px ${24 * camera.scale}px`,
+        backgroundPosition: `${camera.x}px ${camera.y}px`,
         cursor: panRef.current ? 'grabbing' : 'default',
       }}
       onWheel={onWheel}
-      onPointerDown={onCanvasPointerDown}
-      onPointerMove={onCanvasPointerMove}
-      onPointerUp={onCanvasPointerUp}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onContextMenu={(e) => e.preventDefault()}
     >
       <div data-bg="1" className="absolute inset-0" />
 
       <div
         className="absolute left-0 top-0 origin-top-left"
-        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})` }}
+        style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})` }}
       >
-        <svg
-          className="pointer-events-none absolute overflow-visible"
-          style={{ width: 1, height: 1 }}
-        >
-          <defs>
-            <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
-              <path d="M0,0 L8,3 L0,6 Z" fill="#2DD4BF" />
-            </marker>
-          </defs>
-          {connections.map((c) => {
-            const a = nodes.find((n) => n.id === c.from);
-            const b = nodes.find((n) => n.id === c.to);
-            if (!a || !b) return null;
-            return (
+        {!isTask && (
+          <svg
+            className="pointer-events-none absolute overflow-visible"
+            style={{ width: 1, height: 1 }}
+          >
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+                <path d="M0,0 L8,3 L0,6 Z" fill="#5D82FF" />
+              </marker>
+            </defs>
+            {space.connections.map((c: Connection) => {
+              const a = space.achievements.find((n) => n.id === c.from);
+              const b = space.achievements.find((n) => n.id === c.to);
+              if (!a || !b) return null;
+              return (
+                <path
+                  key={c.id}
+                  d={path(center(a), center(b))}
+                  fill="none"
+                  stroke="#5D82FF"
+                  strokeWidth={2.5}
+                  strokeOpacity={0.55}
+                  markerEnd="url(#arrow)"
+                />
+              );
+            })}
+            {fromNode && (
               <path
-                key={c.id}
-                d={path(center(a), center(b))}
+                d={path(center(fromNode), mouse)}
                 fill="none"
-                stroke="#2DD4BF"
+                stroke="#5D82FF"
                 strokeWidth={2.5}
-                strokeOpacity={0.7}
-                markerEnd="url(#arrow)"
+                strokeDasharray="8 8"
+                className="flow-line"
               />
-            );
-          })}
-          {fromNode && (
-            <path
-              d={path(center(fromNode), mouse)}
-              fill="none"
-              stroke="#2DD4BF"
-              strokeWidth={2.5}
-              strokeDasharray="8 8"
-              className="flow-line"
-            />
-          )}
-        </svg>
+            )}
+          </svg>
+        )}
 
-        {nodes.map((n) => (
-          <AchievementNode
-            key={n.id}
-            node={n}
-            selected={selected.includes(n.id)}
-            scale={scale}
-            connecting={!!connectFrom}
-            onSelect={selectNode}
-            onMove={moveNode}
-            onStartConnect={startConnect}
-            onCompleteConnect={completeConnect}
-            onEditTitle={(id, title) => updateNode(id, { title })}
-          />
-        ))}
+        {!isTask &&
+          space.achievements.map((n) => (
+            <AchievementNode
+              key={n.id}
+              node={n}
+              selected={selectedId === n.id}
+              scale={camera.scale}
+              connecting={!!connectFrom}
+              onSelect={(id) => setSelectedId(id)}
+              onMove={moveItem}
+              onStartConnect={startConnect}
+              onCompleteConnect={completeConnect}
+            />
+          ))}
+
+        {isTask &&
+          space.tasks.map((t) => (
+            <TaskNode
+              key={t.id}
+              node={t}
+              selected={selectedId === t.id}
+              scale={camera.scale}
+              onSelect={(id) => setSelectedId(id)}
+              onMove={moveItem}
+              onToggleDone={toggleDone}
+            />
+          ))}
       </div>
 
-      <TopBar
-        scale={scale}
-        onZoom={zoom}
-        onExport={doExport}
-        onSave={doSave}
-        saved={saved}
-        historyCount={history.length}
-        onHistory={() => setShowHistory((v) => !v)}
+      <ModeSwitch mode={mode} onChange={(m) => setState((s) => ({ ...s, mode: m }))} />
+
+      <SpacesBar
+        spaces={spaces}
+        activeId={activeSpaceId}
+        onSelect={(id) => {
+          setState((s) => ({ ...s, activeSpaceId: id }));
+          setSelectedId(null);
+        }}
+        onAdd={addSpace}
       />
+
+      {isTask && <ActiveTasksPanel tasks={space.tasks} />}
 
       <Toolbar
-        onAdd={addNode}
-        onDelete={deleteSelected}
+        isTask={isTask}
+        onAdd={addItem}
         connecting={!!connectFrom}
-        onToggleConnect={() => setConnectFrom(connectFrom ? null : selected[0] || nodes[0]?.id || null)}
-        hasSelection={selected.length > 0}
+        onToggleConnect={() =>
+          setConnectFrom(connectFrom ? null : selectedId || space.achievements[0]?.id || null)
+        }
       />
 
-      <InspectorPanel
-        node={activeNode}
-        onColor={(c) => activeNode && updateNode(activeNode.id, { color: c })}
-        onTitle={(t) => activeNode && updateNode(activeNode.id, { title: t })}
-        onImage={(url) => activeNode && updateNode(activeNode.id, { image: url })}
-      />
-
-      {showHistory && (
-        <div className="glass fixed bottom-24 right-6 z-20 w-64 rounded-2xl p-4 animate-pop-in">
-          <p className="mb-3 font-display text-sm font-semibold text-white/90">История версий</p>
-          {history.length === 0 ? (
-            <p className="font-sans text-xs text-white/40">Сохраните проект, чтобы создать версию.</p>
-          ) : (
-            <div className="space-y-2">
-              {history.map((h, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2">
-                  <Icon name="GitCommitHorizontal" size={14} className="text-[#2DD4BF]" />
-                  <span className="font-sans text-xs text-white/70">{h}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      <button
-        onClick={() => setShowKeys((v) => !v)}
-        className="glass fixed bottom-6 right-6 z-20 flex h-11 w-11 items-center justify-center rounded-2xl text-white/70 hover:text-white"
-        title="Горячие клавиши"
-      >
-        <Icon name="Keyboard" size={18} />
-      </button>
-
-      {showKeys && (
-        <div className="glass fixed bottom-20 right-6 z-30 w-60 rounded-2xl p-4 animate-pop-in">
-          <p className="mb-3 font-display text-sm font-semibold text-white/90">Горячие клавиши</p>
-          {[
-            ['N', 'Новая ачивка'],
-            ['Del', 'Удалить'],
-            ['⌘/Ctrl + S', 'Сохранить'],
-            ['Esc', 'Снять выделение'],
-            ['Ctrl + колесо', 'Масштаб'],
-            ['Двойной клик', 'Изменить название'],
-          ].map(([k, v]) => (
-            <div key={k} className="flex items-center justify-between py-1">
-              <span className="font-sans text-xs text-white/60">{v}</span>
-              <kbd className="rounded-md bg-white/10 px-2 py-0.5 font-mono text-[11px] text-white/80">
-                {k}
-              </kbd>
-            </div>
-          ))}
-        </div>
+      {selectedItem && (
+        <PropertyPanel
+          item={selectedItem}
+          isTask={isTask}
+          onPatch={patchItem}
+          onDelete={deleteItem}
+        />
       )}
 
       {connectFrom && (
-        <div className="fixed left-1/2 top-20 z-20 -translate-x-1/2 rounded-full bg-[#2DD4BF] px-4 py-1.5 font-sans text-xs font-medium text-black animate-pop-in">
+        <div className="panel fixed left-1/2 top-24 z-20 -translate-x-1/2 rounded-full px-4 py-1.5 font-sans text-xs font-medium text-white animate-pop-in">
           Кликните по ачивке, чтобы создать связь · Esc для отмены
         </div>
       )}
